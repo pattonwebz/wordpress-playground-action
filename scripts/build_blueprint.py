@@ -25,14 +25,20 @@ def infer_slug(artifact_name: str) -> str:
 
 
 def build_zip_url(repository: str, run_id: str, artifact_name: str) -> str:
-    return f"https://nightly.link/{repository}/actions/runs/{run_id}/{artifact_name}.zip"
+    # upload-artifact names may contain spaces or other characters that need
+    # encoding to form a valid URL path segment (repository/run_id are not
+    # user-facing free text, so only artifact_name needs it).
+    return (
+        f"https://nightly.link/{repository}/actions/runs/{run_id}/"
+        f"{urllib.parse.quote(artifact_name, safe='')}.zip"
+    )
 
 
 def str_to_bool(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def build_blueprint(*, zip_url, plugin_path, activate_on_load, landing_page,
+def build_blueprint(*, zip_url, activate_on_load, landing_page,
                      wp_version, php_version, multisite,
                      extra_plugins, extra_plugins_activate,
                      extra_theme_url, extra_theme_activate):
@@ -92,8 +98,8 @@ def main():
     extra_plugins_raw = os.environ.get("EXTRA_PLUGINS", "[]").strip() or "[]"
     try:
         extra_plugins = json.loads(extra_plugins_raw)
-        if not isinstance(extra_plugins, list):
-            raise ValueError("extra-plugins must be a JSON array")
+        if not isinstance(extra_plugins, list) or not all(isinstance(u, str) for u in extra_plugins):
+            raise ValueError("extra-plugins must be a JSON array of strings")
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"::error::Invalid extra-plugins input (must be a JSON array of URL strings): {exc}")
         sys.exit(1)
@@ -108,7 +114,6 @@ def main():
 
     blueprint = build_blueprint(
         zip_url=zip_url,
-        plugin_path=plugin_path,
         activate_on_load=activate_on_load,
         landing_page=landing_page,
         wp_version=wp_version,

@@ -29,12 +29,18 @@ class TestBuildZipUrl(unittest.TestCase):
         url = bb.build_zip_url("owner/repo", "12345", "my-plugin")
         self.assertEqual(url, "https://nightly.link/owner/repo/actions/runs/12345/my-plugin.zip")
 
+    def test_encodes_special_characters_in_artifact_name(self):
+        url = bb.build_zip_url("owner/repo", "12345", "my plugin build #1")
+        self.assertEqual(
+            url,
+            "https://nightly.link/owner/repo/actions/runs/12345/my%20plugin%20build%20%231.zip",
+        )
+
 
 class TestBuildBlueprint(unittest.TestCase):
     def base_kwargs(self, **overrides):
         kwargs = dict(
             zip_url="https://nightly.link/owner/repo/actions/runs/1/plugin.zip",
-            plugin_path="plugin/plugin.php",
             activate_on_load=True,
             landing_page="/wp-admin/plugins.php",
             wp_version="latest",
