@@ -14,6 +14,17 @@ cannot proxy private-repo artifacts. If you need a Playground link for a
 private-repo PR build, this action isn't the right tool; you'll need your own
 short-lived tokenised-URL flow instead.
 
+This action fails fast if it detects the current repository is private. It
+can only detect this automatically for the *default* `repository` (i.e. when
+you don't override it) — if you point `repository` at a different, private
+repo, the check is skipped and you'll instead get a dead Playground link at
+click time, with no early warning in the Actions log.
+
+Boolean inputs (`activate-on-load`, `multisite`, `extra-plugins-activate`,
+`extra-theme-activate`) accept `true`/`false`/`1`/`0`/`yes`/`no`/`on`/`off`
+(case-insensitive) and fail the run on anything else, rather than silently
+treating a typo as `false`.
+
 ## Usage
 
 ```yaml

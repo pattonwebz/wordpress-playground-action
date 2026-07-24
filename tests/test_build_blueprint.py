@@ -37,6 +37,17 @@ class TestBuildZipUrl(unittest.TestCase):
         )
 
 
+class TestNormalizeLandingPage(unittest.TestCase):
+    def test_passthrough_when_absolute(self):
+        self.assertEqual(bb.normalize_landing_page("/wp-admin/plugins.php"), "/wp-admin/plugins.php")
+
+    def test_prepends_missing_leading_slash(self):
+        self.assertEqual(bb.normalize_landing_page("wp-admin/plugins.php"), "/wp-admin/plugins.php")
+
+    def test_empty_stays_empty(self):
+        self.assertEqual(bb.normalize_landing_page(""), "")
+
+
 class TestBuildBlueprint(unittest.TestCase):
     def base_kwargs(self, **overrides):
         kwargs = dict(
@@ -121,11 +132,15 @@ class TestBuildPlaygroundUrl(unittest.TestCase):
 class TestStrToBool(unittest.TestCase):
     def test_true_values(self):
         for v in ["true", "True", "1", "yes", "on"]:
-            self.assertTrue(bb.str_to_bool(v))
+            self.assertTrue(bb.str_to_bool("some-input", v))
 
     def test_false_values(self):
-        for v in ["false", "False", "0", "no", "off", ""]:
-            self.assertFalse(bb.str_to_bool(v))
+        for v in ["false", "False", "0", "no", "off"]:
+            self.assertFalse(bb.str_to_bool("some-input", v))
+
+    def test_invalid_value_exits_with_error(self):
+        with self.assertRaises(SystemExit):
+            bb.str_to_bool("some-input", "definitely not a boolean")
 
 
 if __name__ == "__main__":

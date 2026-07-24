@@ -34,8 +34,30 @@ def build_zip_url(repository: str, run_id: str, artifact_name: str) -> str:
     )
 
 
-def str_to_bool(value: str) -> bool:
-    return value.strip().lower() in ("1", "true", "yes", "on")
+TRUE_VALUES = {"1", "true", "yes", "on"}
+FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def str_to_bool(name: str, value: str) -> bool:
+    """Parse a boolean-ish input, failing loudly on anything unrecognized
+    rather than silently treating a typo (e.g. "flase") as false."""
+    normalized = value.strip().lower()
+    if normalized in TRUE_VALUES:
+        return True
+    if normalized in FALSE_VALUES:
+        return False
+    print(f"::error::Invalid boolean value for {name}: '{value}' (expected one of "
+          f"{sorted(TRUE_VALUES | FALSE_VALUES)})")
+    sys.exit(1)
+
+
+def normalize_landing_page(landing_page: str) -> str:
+    """Ensure the landing page is an absolute path, as Playground expects."""
+    if landing_page and not landing_page.startswith("/"):
+        print(f"::warning::landing-page '{landing_page}' doesn't start with '/'; prepending it "
+              f"since Playground expects an absolute path.")
+        return "/" + landing_page
+    return landing_page
 
 
 def build_blueprint(*, zip_url, activate_on_load, landing_page,
@@ -86,14 +108,16 @@ def main():
     run_id = os.environ["RUN_ID"]
     artifact_name = os.environ["ARTIFACT_NAME"]
     plugin_slug_override = os.environ.get("PLUGIN_SLUG", "").strip()
-    activate_on_load = str_to_bool(os.environ.get("ACTIVATE_ON_LOAD", "true"))
-    landing_page = os.environ.get("LANDING_PAGE", "/wp-admin/plugins.php")
+    activate_on_load = str_to_bool("activate-on-load", os.environ.get("ACTIVATE_ON_LOAD", "true"))
+    landing_page = os.environ.get("LANDING_PAGE", "/wp-admin/plugins.php").strip()
     wp_version = os.environ.get("WP_VERSION", "latest")
     php_version = os.environ.get("PHP_VERSION", "8.2")
-    multisite = str_to_bool(os.environ.get("MULTISITE", "false"))
-    extra_plugins_activate = str_to_bool(os.environ.get("EXTRA_PLUGINS_ACTIVATE", "true"))
+    multisite = str_to_bool("multisite", os.environ.get("MULTISITE", "false"))
+    extra_plugins_activate = str_to_bool("extra-plugins-activate", os.environ.get("EXTRA_PLUGINS_ACTIVATE", "true"))
     extra_theme_url = os.environ.get("EXTRA_THEME_URL", "").strip()
-    extra_theme_activate = str_to_bool(os.environ.get("EXTRA_THEME_ACTIVATE", "true"))
+    extra_theme_activate = str_to_bool("extra-theme-activate", os.environ.get("EXTRA_THEME_ACTIVATE", "true"))
+
+    landing_page = normalize_landing_page(landing_page)
 
     extra_plugins_raw = os.environ.get("EXTRA_PLUGINS", "[]").strip() or "[]"
     try:
