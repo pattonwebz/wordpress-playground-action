@@ -47,6 +47,7 @@ jobs:
         uses: equalizedigital/wordpress-playground-action@v1
         with:
           artifact-name: my-plugin
+          github-token: ${{ secrets.GITHUB_TOKEN }}   # optional, see "Artifact verification" below
 
       - run: echo "${{ steps.playground.outputs.playground-url }}"
 ```
@@ -64,6 +65,20 @@ jobs:
 ```
 
 Requires `pull-requests: write` permission on the job/workflow.
+
+### Artifact verification
+
+If you pass `github-token`, the action calls the Actions API to confirm a
+non-expired artifact named `artifact-name` actually exists in that run before
+building a link — so a typo'd `artifact-name`, wrong `run-id`, or wrong
+`repository` fails loudly in the Actions log instead of producing a dead
+Playground link that only fails when someone clicks it. This needs
+`actions: read` permission on the job/workflow (broader than `post-comment`'s
+`pull-requests: write`, and works independently of it).
+
+If you don't pass `github-token`, verification is skipped (with a `::notice::`
+in the log) and the link is built unconditionally — the action still works,
+you just lose the early failure.
 
 ## Inputs
 
@@ -84,7 +99,7 @@ Requires `pull-requests: write` permission on the job/workflow.
 | `extra-theme-activate` | no | `true` | Activate the extra theme after install. |
 | `post-comment` | no | `false` | Post/update a sticky PR comment with the link. |
 | `pr-number` | no | `''` | PR to comment on. Required if `post-comment` is `true`. |
-| `github-token` | no | `''` | Token for the PR comment. Required if `post-comment` is `true`. |
+| `github-token` | no | `''` | Verifies the artifact exists (skipped if empty) and/or posts the PR comment. Required if `post-comment` is `true`. |
 | `comment-marker` | no | `<!-- PLAYGROUND-LINK -->` | Marker used to find/update the sticky comment. |
 | `expiry-note` | no | `''` | Freeform text appended to the PR comment. |
 

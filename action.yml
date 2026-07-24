@@ -66,7 +66,7 @@ inputs:
     required: false
     default: ''
   github-token:
-    description: 'Token used to read/write the PR comment. Required if post-comment is true (needs pull-requests: write permission).'
+    description: 'Token used to (a) verify the artifact exists before building a link, and (b) read/write the PR comment. Verification is skipped if this is empty. Required if post-comment is true (needs pull-requests: write; verification alone needs only actions: read).'
     required: false
     default: ''
   comment-marker:
@@ -120,6 +120,31 @@ runs:
           echo "::error::post-comment is true but github-token was not provided."
           exit 1
         fi
+
+    - name: Verify the artifact exists
+      if: inputs.github-token != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPOSITORY: ${{ inputs.repository }}
+        RUN_ID: ${{ inputs.run-id }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+      run: |
+        set -euo pipefail
+        if gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" --paginate \
+             --jq '.artifacts[] | select(.expired == false) | .name' \
+             | grep -Fxq -- "$ARTIFACT_NAME"; then
+          echo "Found artifact '${ARTIFACT_NAME}' in run ${RUN_ID}."
+        else
+          echo "::error::No non-expired artifact named '${ARTIFACT_NAME}' found in run ${RUN_ID} of ${REPOSITORY}. Check that artifact-name matches the 'name:' used in an earlier actions/upload-artifact step, and that run-id/repository are correct."
+          exit 1
+        fi
+
+    - name: Skip artifact verification (no github-token provided)
+      if: inputs.github-token == ''
+      shell: bash
+      run: |
+        echo "::notice::No github-token provided, so the artifact's existence was not verified before building the link. Pass github-token (needs actions: read permission) to catch a wrong artifact-name/run-id/repository at build time instead of at click time."
 
     - name: Build the Playground link
       id: build
