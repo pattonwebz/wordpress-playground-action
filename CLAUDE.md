@@ -18,6 +18,40 @@ repositories — that's a separate, harder problem (see `accessibility-checker-p
 short-lived tokenized `raw.githubusercontent.com` URL). This action only
 supports the nightly.link path, which requires a public repo/artifact.
 
+## How callers trigger this (three modes, all documented with full working examples in README.md's "Trigger modes" section)
+
+This action itself has no trigger of its own — it's a single step a caller's
+workflow invokes. The three ways a *caller* workflow wires it up differ
+mainly in **where the `run-id` comes from**, since the action needs to know
+which run's artifact to point `nightly.link` at:
+
+1. **Manual (`workflow_dispatch`)** — caller workflow declares `run_id`,
+   `artifact_name`, and `pr_number` as dispatch inputs, since a manually
+   dispatched run has no artifact of its own; `run-id` must be passed in
+   explicitly from a prior build run's ID.
+2. **Automatic (`pull_request: types: [opened, synchronize, reopened]`)** —
+   the same job builds the zip, uploads the artifact, and calls this action,
+   all in one run, so `run-id`/`repository` are left at their defaults (the
+   current run/repo). **Caveat that matters if this doesn't seem to work**:
+   GitHub gives `pull_request`-triggered workflows a **read-only**
+   `GITHUB_TOKEN` when the PR is from a fork, no matter what `permissions:`
+   the workflow declares — so `post-comment` silently can't write a comment
+   on fork PRs under this trigger. That's a GitHub platform restriction, not
+   a bug in this action.
+3. **Label-triggered (`pull_request: types: [labeled]`, gated on
+   `github.event.label.name == 'playground'`)** — for "build always, link on
+   demand" setups. The caller workflow looks up the latest successful build
+   run for the PR's head SHA via `gh api repos/{repo}/actions/runs?head_sha=...`
+   (filtered by workflow name and `status=success`, `sort_by(.created_at) | last`)
+   to get `run-id`, rather than taking it as an input, then removes the
+   trigger label afterwards so re-adding it mints a fresh link without
+   rebuilding. Same fork-PR `GITHUB_TOKEN` caveat as mode 2 applies.
+
+If asked to add or modify a caller workflow that uses this action, check
+README.md's "Trigger modes" section first — it has the complete, YAML-valid
+example for each of the three above; don't invent a fourth pattern unless
+none of these fit.
+
 ## Commands
 
 ```sh
