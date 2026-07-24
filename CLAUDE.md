@@ -126,7 +126,7 @@ JS/TS or Docker.
   (mirroring how a real caller uses this action), runs the action against it,
   and asserts on the decoded blueprint shape.
 - `.github/workflows/release.yml` — on a `vX.Y.Z` tag push, force-moves the
-  floating `vX` major tag to match, so callers can pin `@v1`. Has a
+  floating `vX` major tag to match, so callers can pin `@v0`. Has a
   `concurrency` group so two close-together tag pushes can't race each other.
 - `.github/workflows/lint.yml` — runs `actionlint` against `action.yml` and
   the workflow files. Pinned to a commit SHA (not a floating tag), since it's

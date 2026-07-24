@@ -1,7 +1,7 @@
 name: Release
 
 # Keeps a floating major-version tag (e.g. v1) pointed at the latest vX.Y.Z tag,
-# so callers can pin `uses: equalizedigital/wordpress-playground-action@v1`.
+# so callers can pin `uses: pattonwebz/wordpress-playground-action@v0`.
 
 on:
   push:

@@ -46,7 +46,7 @@ jobs:
 
       - name: Generate Playground link
         id: playground
-        uses: equalizedigital/wordpress-playground-action@v1
+        uses: pattonwebz/wordpress-playground-action@v0
         with:
           artifact-name: my-plugin
           github-token: ${{ secrets.GITHUB_TOKEN }}   # optional, see "Artifact verification" below
@@ -57,7 +57,7 @@ jobs:
 ### Posting a PR comment
 
 ```yaml
-      - uses: equalizedigital/wordpress-playground-action@v1
+      - uses: pattonwebz/wordpress-playground-action@v0
         with:
           artifact-name: my-plugin
           post-comment: 'true'
@@ -127,7 +127,7 @@ jobs:
     steps:
       - name: Generate Playground link and comment
         id: playground
-        uses: equalizedigital/wordpress-playground-action@v1
+        uses: pattonwebz/wordpress-playground-action@v0
         with:
           artifact-name: ${{ inputs.artifact_name }}
           run-id: ${{ inputs.run_id }}
@@ -172,7 +172,7 @@ jobs:
           path: my-plugin.zip
 
       - name: Generate Playground link and comment
-        uses: equalizedigital/wordpress-playground-action@v1
+        uses: pattonwebz/wordpress-playground-action@v0
         with:
           artifact-name: my-plugin
           post-comment: 'true'
@@ -229,7 +229,7 @@ jobs:
           echo "run-id=${RUN_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Generate Playground link and comment
-        uses: equalizedigital/wordpress-playground-action@v1
+        uses: pattonwebz/wordpress-playground-action@v0
         with:
           artifact-name: my-plugin
           run-id: ${{ steps.find-run.outputs.run-id }}
