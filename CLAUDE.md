@@ -108,4 +108,59 @@ JS/TS or Docker.
   (mirroring how a real caller uses this action), runs the action against it,
   and asserts on the decoded blueprint shape.
 - `.github/workflows/release.yml` — on a `vX.Y.Z` tag push, force-moves the
-  floating `vX` major tag to match, so callers can pin `@v1`.
+  floating `vX` major tag to match, so callers can pin `@v1`. Has a
+  `concurrency` group so two close-together tag pushes can't race each other.
+- `.github/workflows/lint.yml` — runs `actionlint` against `action.yml` and
+  the workflow files. Pinned to a commit SHA (not a floating tag), since it's
+  a third-party action; the SHA was verified against the real tag before
+  pinning (see commit history if it ever needs bumping — re-verify the new
+  SHA the same way, don't just trust a new tag name).
+
+## Extending this action
+
+Adding a new input touches five places — miss one and it'll look wired up
+but silently do nothing:
+1. `action.yml`'s `inputs:` block (with a description) and its `env:` wiring
+   into the "Build the Playground link" step.
+2. `scripts/build_blueprint.py`'s `main()` (read the env var) and, if it
+   affects the blueprint shape, `build_blueprint()`'s parameters/body.
+3. `tests/test_build_blueprint.py` — at minimum a case in `TestBuildBlueprint`
+   or `TestMain`.
+4. README.md's Inputs table.
+5. This file, if the change affects the architecture description above or
+   adds a new trigger-relevant caveat.
+
+## Testing philosophy for this repo
+
+The Python unit tests (`tests/test_build_blueprint.py`) are real and worth
+trusting for `scripts/build_blueprint.py`. But `action.yml`'s own bash/YAML
+has no unit-test layer of its own — only `.github/workflows/test.yml`'s
+live end-to-end run and manual local verification cover it. Three real,
+shipped bugs in this repo were only caught by actually *executing* something
+rather than reading it and reasoning about correctness:
+- A `${{ inputs.pr-number }}` interpolated directly into a `run:` string
+  (instead of via `env:`) was a live shell-injection vuln — found by
+  rendering the exact template with a malicious value and watching it run.
+- `gh api --jq --arg` looks like valid jq-passthrough syntax but isn't —
+  `gh api`'s `--jq` doesn't proxy jq's own CLI flags. Found by actually
+  running the command.
+- The slug-inference regex looked correct on the reference example but
+  broke on `contact-form-7` (a real, extremely common WordPress plugin
+  slug) and later on hex-only English words like `facade` — found by
+  running the regex against real plugin/artifact names, not synthetic ones.
+
+When touching `action.yml`'s bash/`gh api` calls or `build_blueprint.py`'s
+regex/URL logic, actually run it (`bash -c`, a real `gh api` call against a
+public repo, or the Python function directly) against a deliberately
+adversarial or real-world input before trusting it — this codebase has a
+track record of "obviously correct" code that wasn't.
+
+## Cutting a release
+
+1. Tag `vX.Y.Z` on `master` and push the tag — `release.yml` force-moves the
+   floating `vX` tag to match automatically.
+2. **First release only**: creating a GitHub Release from that tag has a
+   one-time "Publish this Action to the GitHub Marketplace" checkbox in the
+   UI. This is a manual step with no file/workflow representation — it can't
+   be automated from within the repo, and there's nothing to grep for to
+   confirm it's been done.
