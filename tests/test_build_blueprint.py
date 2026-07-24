@@ -1,13 +1,36 @@
 import base64
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 import urllib.parse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import build_blueprint as bb  # noqa: E402
+
+SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "..", "scripts", "build_blueprint.py")
+
+
+def run_main(env_overrides, github_output=None):
+    """Invoke build_blueprint.py as a subprocess, the same way action.yml does."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "REPOSITORY": "owner/repo",
+        "RUN_ID": "123",
+        "ARTIFACT_NAME": "my-plugin",
+    }
+    if github_output is not None:
+        env["GITHUB_OUTPUT"] = github_output
+    env.update(env_overrides)
+    return subprocess.run(
+        [sys.executable, SCRIPT_PATH],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
 
 
 class TestInferSlug(unittest.TestCase):
@@ -35,6 +58,17 @@ class TestInferSlug(unittest.TestCase):
 
     def test_strips_build_number_and_hash_with_no_dotted_version(self):
         self.assertEqual(bb.infer_slug("my-plugin-826-7a385380"), "my-plugin")
+
+    def test_does_not_strip_slug_ending_in_all_letter_hex_word(self):
+        # Regression: a bare "-[0-9a-f]{6,40}" match also matches ordinary
+        # English words spelled only with a-f letters, which could plausibly
+        # be the tail end of a real slug name.
+        for word in ("facade", "deface", "decade"):
+            with self.subTest(word=word):
+                self.assertEqual(bb.infer_slug(f"my-plugin-{word}"), f"my-plugin-{word}")
+
+    def test_strips_long_digit_only_suffix(self):
+        self.assertEqual(bb.infer_slug("my-plugin-123456"), "my-plugin")
 
 
 class TestBuildZipUrl(unittest.TestCase):
@@ -154,6 +188,60 @@ class TestStrToBool(unittest.TestCase):
     def test_invalid_value_exits_with_error(self):
         with self.assertRaises(SystemExit):
             bb.str_to_bool("some-input", "definitely not a boolean")
+
+
+class TestMain(unittest.TestCase):
+    """Exercises main() end-to-end as a subprocess, the same way action.yml
+    invokes it, so these catch mistakes the unit-level tests above (which
+    call the helper functions directly) wouldn't - e.g. a bad env var name,
+    wrong exit code, or an error path that isn't wired up to sys.exit(1)."""
+
+    def test_happy_path_writes_expected_outputs(self):
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".env", delete=False) as f:
+            output_path = f.name
+        try:
+            result = run_main({}, github_output=output_path)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(output_path) as f:
+                content = f.read()
+            self.assertIn("playground-url=https://playground.wordpress.net/?blueprint-url=", content)
+            self.assertIn("zip-url=https://nightly.link/owner/repo/actions/runs/123/my-plugin.zip", content)
+            self.assertIn("plugin-path=my-plugin/my-plugin.php", content)
+        finally:
+            os.unlink(output_path)
+
+    def test_invalid_extra_plugins_json_exits_nonzero(self):
+        result = run_main({"EXTRA_PLUGINS": "not json"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::", result.stdout)
+
+    def test_extra_plugins_not_a_list_exits_nonzero(self):
+        result = run_main({"EXTRA_PLUGINS": '{"not": "a list"}'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::", result.stdout)
+
+    def test_extra_plugins_with_non_string_entries_exits_nonzero(self):
+        result = run_main({"EXTRA_PLUGINS": "[1, 2, 3]"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::", result.stdout)
+
+    def test_invalid_boolean_input_exits_nonzero(self):
+        result = run_main({"ACTIVATE_ON_LOAD": "definitely-not-a-boolean"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("::error::Invalid boolean value for activate-on-load", result.stdout)
+
+    def test_missing_required_env_var_exits_nonzero(self):
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "RUN_ID": "123",
+            "ARTIFACT_NAME": "my-plugin",
+            # REPOSITORY deliberately omitted
+        }
+        result = subprocess.run(
+            [sys.executable, SCRIPT_PATH], env=env, capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("REPOSITORY", result.stderr)
 
 
 if __name__ == "__main__":

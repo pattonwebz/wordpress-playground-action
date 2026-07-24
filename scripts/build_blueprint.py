@@ -18,10 +18,19 @@ import urllib.parse
 # would silently produce the wrong activation path. Only strip when there's
 # a recognizable dotted version (e.g. "-2.2.0") and/or a long-enough hex hash
 # to be confident it's build metadata, not part of the slug itself.
+#
+# The hex-hash branches additionally require at least one digit
+# ((?=[0-9a-f]*\d)) - a plain hex CHARACTER CLASS also matches ordinary
+# English words spelled with only a-f letters ("facade", "deface", "decade",
+# "efface", "accede"...), which are exactly the kind of thing a real plugin
+# slug might end in. Real short commit hashes are effectively always a mix
+# of digits and letters, so requiring a digit filters out the word case
+# while still matching real hashes.
+HEX_HASH_WITH_DIGIT = r"(?=[0-9a-f]*\d)[0-9a-f]{6,40}"
 SUFFIX_RE = re.compile(
-    r"(?:-\d+(?:\.\d+)+(?:-\d+)?(?:-[0-9a-f]{6,40})?"  # -2.2.0[-826][-7a385380]
-    r"|-\d+-[0-9a-f]{6,40}"                             # -826-7a385380
-    r"|-[0-9a-f]{6,40})$"                               # -7a385380
+    rf"(?:-\d+(?:\.\d+)+(?:-\d+)?(?:-{HEX_HASH_WITH_DIGIT})?"  # -2.2.0[-826][-7a385380]
+    rf"|-\d+-{HEX_HASH_WITH_DIGIT}"                             # -826-7a385380
+    rf"|-{HEX_HASH_WITH_DIGIT})$"                               # -7a385380
 )
 
 

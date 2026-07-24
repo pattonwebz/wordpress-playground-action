@@ -11,6 +11,13 @@ on:
 permissions:
   contents: write
 
+# Two vX.Y.Z tags pushed close together would otherwise race to force-move
+# the same floating vX tag, and the job that happens to finish last (not the
+# one pushed last) wins - serialize releases so that can't happen.
+concurrency:
+  group: release-move-major-tag
+  cancel-in-progress: false
+
 jobs:
   move-major-tag:
     runs-on: ubuntu-latest

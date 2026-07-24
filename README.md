@@ -14,11 +14,13 @@ cannot proxy private-repo artifacts. If you need a Playground link for a
 private-repo PR build, this action isn't the right tool; you'll need your own
 short-lived tokenised-URL flow instead.
 
-This action fails fast if it detects the current repository is private. It
-can only detect this automatically for the *default* `repository` (i.e. when
-you don't override it) — if you point `repository` at a different, private
-repo, the check is skipped and you'll instead get a dead Playground link at
-click time, with no early warning in the Actions log.
+This action fails fast if it detects the current repository is private, via
+`github.event.repository.private`. That check only fires when (a) you're
+using the *default* `repository` input (an overridden, different repo isn't
+checked at all), and (b) the triggering event's payload actually includes a
+populated `repository` object — some trigger contexts may not, in which case
+the check is silently skipped. In either gap case you'll get a dead
+Playground link at click time instead of an early error in the Actions log.
 
 Boolean inputs (`activate-on-load`, `multisite`, `extra-plugins-activate`,
 `extra-theme-activate`) accept `true`/`false`/`1`/`0`/`yes`/`no`/`on`/`off`

