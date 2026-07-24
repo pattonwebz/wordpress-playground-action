@@ -102,7 +102,25 @@ JS/TS or Docker.
   - `build_playground_url()` — base64-encodes the blueprint as a
     `data:application/json;base64,...` URI and URL-quotes it into the
     `playground.wordpress.net` link.
+  - `write_github_output()` — writes each `$GITHUB_OUTPUT` entry using the
+    heredoc-style `key<<DELIM` / `DELIM` form with a random per-call
+    delimiter, not a plain `key=value\n` line. A plain line breaks (and is
+    a real output-injection vector) if the value contains a newline — since
+    `plugin-path` is derived from `artifact-name`, an action input, a value
+    like `artifact-name: "evil\nfake-output=pwned"` would otherwise forge an
+    entirely separate output that GitHub Actions' runtime would parse as
+    real. Confirmed exploitable against a naive `key=value` write before
+    fixing it; if you ever touch this function, re-verify with a real
+    reimplementation of the `$GITHUB_OUTPUT` parser (see
+    `tests/test_build_blueprint.py`'s `parse_github_output()`), not a
+    substring check — a substring check can't tell a forged extra key
+    apart from an inert single-output value.
 - `tests/test_build_blueprint.py` — plain `unittest`, no external test deps.
+  Includes `parse_github_output()`, a small reimplementation of GitHub's
+  actual `$GITHUB_OUTPUT` parsing logic (state machine: plain `key=value`
+  lines vs. `key<<DELIM` multiline blocks) — tests use it instead of
+  substring-matching the raw file, since a substring check would pass even
+  on a vulnerable plain-write implementation.
 - `.github/workflows/test.yml` — end-to-end check: downloads a real public
   zip (WordPress.org's Hello Dolly plugin), re-uploads it as an artifact
   (mirroring how a real caller uses this action), runs the action against it,
@@ -135,7 +153,7 @@ but silently do nothing:
 The Python unit tests (`tests/test_build_blueprint.py`) are real and worth
 trusting for `scripts/build_blueprint.py`. But `action.yml`'s own bash/YAML
 has no unit-test layer of its own — only `.github/workflows/test.yml`'s
-live end-to-end run and manual local verification cover it. Three real,
+live end-to-end run and manual local verification cover it. Four real,
 shipped bugs in this repo were only caught by actually *executing* something
 rather than reading it and reasoning about correctness:
 - A `${{ inputs.pr-number }}` interpolated directly into a `run:` string
@@ -148,6 +166,13 @@ rather than reading it and reasoning about correctness:
   broke on `contact-form-7` (a real, extremely common WordPress plugin
   slug) and later on hex-only English words like `facade` — found by
   running the regex against real plugin/artifact names, not synthetic ones.
+- A plain `key=value\n` write to `$GITHUB_OUTPUT` looked fine on every
+  realistic input, but an `artifact-name` containing a newline could forge
+  an entirely separate, fake output — found by running a real
+  reimplementation of GitHub's `$GITHUB_OUTPUT` parser against the output,
+  not by eyeballing the write code (a substring check of the raw file would
+  have missed it, since the forged line is textually present either way;
+  what mattered was *how it gets parsed*).
 
 When touching `action.yml`'s bash/`gh api` calls or `build_blueprint.py`'s
 regex/URL logic, actually run it (`bash -c`, a real `gh api` call against a

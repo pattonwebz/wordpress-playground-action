@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import urllib.parse
+import uuid
 
 # Deliberately does NOT match a bare trailing "-<digits>" with no dotted
 # version and no hex hash (e.g. "-7", "-6") - several real, popular plugin
@@ -118,6 +119,20 @@ def build_blueprint(*, zip_url, activate_on_load, landing_page,
     }
 
 
+def write_github_output(fh, key: str, value: str) -> None:
+    """Write one $GITHUB_OUTPUT entry using the heredoc-style delimiter form.
+
+    A plain "key=value\n" line breaks (and is a real output-injection risk)
+    if value contains a newline - e.g. artifact-name is an action input, and
+    an artifact-name containing "\\nfake-output=pwned" would otherwise forge
+    an entirely separate output. A random per-call delimiter (matching how
+    @actions/core's setOutput does this) closes that off regardless of what
+    value contains, short of it containing the exact random delimiter itself.
+    """
+    delimiter = f"ghadelim_{uuid.uuid4().hex}"
+    fh.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
+
+
 def build_playground_url(blueprint: dict) -> str:
     data_uri = "data:application/json;base64," + base64.b64encode(
         json.dumps(blueprint, separators=(",", ":")).encode()
@@ -176,9 +191,9 @@ def main():
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a") as fh:
-            fh.write(f"playground-url={playground_url}\n")
-            fh.write(f"zip-url={zip_url}\n")
-            fh.write(f"plugin-path={plugin_path}\n")
+            write_github_output(fh, "playground-url", playground_url)
+            write_github_output(fh, "zip-url", zip_url)
+            write_github_output(fh, "plugin-path", plugin_path)
     else:
         print(json.dumps({
             "playground-url": playground_url,

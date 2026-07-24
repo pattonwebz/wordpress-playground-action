@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,49 @@ def run_main(env_overrides, github_output=None):
         capture_output=True,
         text=True,
     )
+
+
+def parse_github_output(path):
+    """Reimplements GitHub Actions' actual $GITHUB_OUTPUT parsing (a state
+    machine: plain "key=value" lines, or "key<<DELIM" ... "DELIM" multiline
+    blocks) so tests check what the real runtime would see, not just
+    whatever a naive "key=value" substring search would suggest."""
+    outputs = {}
+    with open(path) as fh:
+        lines = fh.read().split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line:
+            i += 1
+            continue
+        m = re.match(r"^([^=<]+)<<(\S+)$", line)
+        if m:
+            key, delim = m.group(1), m.group(2)
+            i += 1
+            value_lines = []
+            while i < len(lines) and lines[i] != delim:
+                value_lines.append(lines[i])
+                i += 1
+            outputs[key] = "\n".join(value_lines)
+            i += 1  # skip the delimiter line
+        elif "=" in line:
+            key, _, value = line.partition("=")
+            outputs[key] = value
+            i += 1
+        else:
+            i += 1
+    return outputs
+
+
+def _decode_blueprint(playground_url):
+    query = urllib.parse.urlparse(playground_url).query
+    data_uri = urllib.parse.parse_qs(query)["blueprint-url"][0]
+    return json.loads(base64.b64decode(data_uri.split(",", 1)[1]))
+
+
+def _decode_install_plugin_steps(playground_url):
+    return [s for s in _decode_blueprint(playground_url)["steps"] if s["step"] == "installPlugin"]
 
 
 class TestInferSlug(unittest.TestCase):
@@ -159,6 +203,22 @@ class TestBuildBlueprint(unittest.TestCase):
         theme_steps = [s for s in blueprint["steps"] if s["step"] == "installTheme"]
         self.assertEqual(len(theme_steps), 0)
 
+    def test_everything_combined_preserves_step_order(self):
+        # multisite + extra plugins + extra theme all at once - the individual
+        # tests above cover each in isolation, but ordering bugs (e.g. the
+        # theme step ending up before an extra plugin, or multisite ending up
+        # after installPlugin) would only show up when they're all present.
+        blueprint = bb.build_blueprint(**self.base_kwargs(
+            multisite=True,
+            extra_plugins=["https://example.com/a.zip", "https://example.com/b.zip"],
+            extra_theme_url="https://example.com/theme.zip",
+        ))
+        step_names = [s["step"] for s in blueprint["steps"]]
+        self.assertEqual(
+            step_names,
+            ["login", "enableMultisite", "installPlugin", "installPlugin", "installPlugin", "installTheme"],
+        )
+
 
 class TestBuildPlaygroundUrl(unittest.TestCase):
     def test_round_trip(self):
@@ -176,6 +236,51 @@ class TestBuildPlaygroundUrl(unittest.TestCase):
         self.assertEqual(decoded, blueprint)
 
 
+class TestWriteGithubOutput(unittest.TestCase):
+    def _write_and_parse(self, key, value):
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".env", delete=False) as f:
+            path = f.name
+        try:
+            with open(path, "a") as fh:
+                bb.write_github_output(fh, key, value)
+            return parse_github_output(path)
+        finally:
+            os.unlink(path)
+
+    def test_simple_value_round_trips(self):
+        outputs = self._write_and_parse("my-key", "my-value")
+        self.assertEqual(outputs, {"my-key": "my-value"})
+
+    def test_value_containing_newline_round_trips_intact(self):
+        outputs = self._write_and_parse("my-key", "line one\nline two")
+        self.assertEqual(outputs["my-key"], "line one\nline two")
+
+    def test_value_that_looks_like_another_output_does_not_forge_one(self):
+        outputs = self._write_and_parse("my-key", "part1\nfake-key=forged\npart2")
+        self.assertEqual(set(outputs.keys()), {"my-key"})
+        self.assertEqual(outputs["my-key"], "part1\nfake-key=forged\npart2")
+
+    def test_delimiter_is_different_each_call(self):
+        # If two calls ever produced the same delimiter, a value from one
+        # write could accidentally terminate the other's block.
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".env", delete=False) as f:
+            path = f.name
+        try:
+            with open(path, "a") as fh:
+                bb.write_github_output(fh, "key-a", "value-a")
+                bb.write_github_output(fh, "key-b", "value-b")
+            with open(path) as fh:
+                content = fh.read()
+            # Each delimiter appears twice (opening "key<<DELIM" line, then a
+            # bare closing "DELIM" line) - so 4 occurrences total, but only 2
+            # distinct delimiter tokens across the two independent writes.
+            occurrences = re.findall(r"ghadelim_[0-9a-f]+", content)
+            self.assertEqual(len(occurrences), 4)
+            self.assertEqual(len(set(occurrences)), 2)
+        finally:
+            os.unlink(path)
+
+
 class TestStrToBool(unittest.TestCase):
     def test_true_values(self):
         for v in ["true", "True", "1", "yes", "on"]:
@@ -184,6 +289,10 @@ class TestStrToBool(unittest.TestCase):
     def test_false_values(self):
         for v in ["false", "False", "0", "no", "off"]:
             self.assertFalse(bb.str_to_bool("some-input", v))
+
+    def test_surrounding_whitespace_is_trimmed(self):
+        self.assertTrue(bb.str_to_bool("some-input", "  true  "))
+        self.assertFalse(bb.str_to_bool("some-input", "  false  "))
 
     def test_invalid_value_exits_with_error(self):
         with self.assertRaises(SystemExit):
@@ -202,13 +311,60 @@ class TestMain(unittest.TestCase):
         try:
             result = run_main({}, github_output=output_path)
             self.assertEqual(result.returncode, 0, result.stderr)
-            with open(output_path) as f:
-                content = f.read()
-            self.assertIn("playground-url=https://playground.wordpress.net/?blueprint-url=", content)
-            self.assertIn("zip-url=https://nightly.link/owner/repo/actions/runs/123/my-plugin.zip", content)
-            self.assertIn("plugin-path=my-plugin/my-plugin.php", content)
+            outputs = parse_github_output(output_path)
+            self.assertEqual(set(outputs.keys()), {"playground-url", "zip-url", "plugin-path"})
+            self.assertTrue(outputs["playground-url"].startswith(
+                "https://playground.wordpress.net/?blueprint-url="))
+            self.assertEqual(
+                outputs["zip-url"],
+                "https://nightly.link/owner/repo/actions/runs/123/my-plugin.zip",
+            )
+            self.assertEqual(outputs["plugin-path"], "my-plugin/my-plugin.php")
         finally:
             os.unlink(output_path)
+
+    def test_artifact_name_with_newline_cannot_forge_extra_output(self):
+        # Regression: a plain "key=value\n" write would let an artifact-name
+        # containing "\nfake-output=pwned" inject an entirely separate,
+        # forged output. write_github_output()'s per-call random delimiter
+        # closes that off - confirmed here with a real-parser reimplementation,
+        # not a substring check (a substring check would wrongly "pass" even
+        # with the vulnerable plain-write version, since the forged line is
+        # textually present either way; what matters is how it's *parsed*).
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".env", delete=False) as f:
+            output_path = f.name
+        try:
+            result = run_main(
+                {"ARTIFACT_NAME": "evil\nfake-output=pwned"},
+                github_output=output_path,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            outputs = parse_github_output(output_path)
+            self.assertEqual(set(outputs.keys()), {"playground-url", "zip-url", "plugin-path"})
+            self.assertNotIn("fake-output", outputs)
+            self.assertIn("evil\nfake-output=pwned", outputs["plugin-path"])
+        finally:
+            os.unlink(output_path)
+
+    def test_plugin_slug_override_skips_inference(self):
+        # artifact name looks strippable (contact-form-7-style short-number
+        # suffix would normally be left alone anyway, so use a name that
+        # WOULD be mangled by inference to prove the override wins outright).
+        result = run_main({
+            "ARTIFACT_NAME": "my-plugin-2.2.0-826-7a385380",
+            "PLUGIN_SLUG": "totally-different-slug",
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("::warning::Inferred plugin slug", result.stdout)
+        parsed = json.loads(result.stdout[result.stdout.index("{"):])
+        self.assertEqual(parsed["plugin-path"], "totally-different-slug/totally-different-slug.php")
+
+    def test_whitespace_only_extra_plugins_defaults_to_empty(self):
+        result = run_main({"EXTRA_PLUGINS": "   "})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = json.loads(result.stdout[result.stdout.index("{"):])
+        install_steps = _decode_install_plugin_steps(parsed["playground-url"])
+        self.assertEqual(len(install_steps), 1)  # just the main plugin, no extras
 
     def test_invalid_extra_plugins_json_exits_nonzero(self):
         result = run_main({"EXTRA_PLUGINS": "not json"})
