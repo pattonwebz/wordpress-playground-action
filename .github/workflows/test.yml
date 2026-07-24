@@ -46,6 +46,16 @@ jobs:
           multisite: 'true'
           extra-plugins: '["https://downloads.wordpress.org/plugin/hello-dolly.zip"]'
 
+      - name: Run the action against a slug that itself ends in a digit
+        id: digit-slug
+        uses: ./
+        with:
+          # Regression check: Contact Form 7's real slug is "contact-form-7".
+          # No artifact with this name actually exists in this run, but
+          # github-token is intentionally omitted here so verification is
+          # skipped and we can assert purely on slug inference.
+          artifact-name: contact-form-7
+
       - name: Run the action with artifact verification (should succeed)
         id: verified
         uses: ./
@@ -88,6 +98,12 @@ jobs:
           assert_contains "${{ steps.defaults.outputs.playground-url }}" "https://playground.wordpress.net/?blueprint-url=" "defaults playground-url"
           assert_contains "${{ steps.defaults.outputs.zip-url }}" "https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/hello-dolly.zip" "defaults zip-url"
           assert_contains "${{ steps.defaults.outputs.plugin-path }}" "hello-dolly/hello-dolly.php" "defaults plugin-path"
+
+          echo "plugin-path (digit-slug): ${{ steps.digit-slug.outputs.plugin-path }}"
+          if [ "${{ steps.digit-slug.outputs.plugin-path }}" != "contact-form-7/contact-form-7.php" ]; then
+            echo "::error::Expected plugin-path 'contact-form-7/contact-form-7.php', got '${{ steps.digit-slug.outputs.plugin-path }}'"
+            exit 1
+          fi
 
           echo "playground-url (verified): ${{ steps.verified.outputs.playground-url }}"
           assert_contains "${{ steps.verified.outputs.playground-url }}" "https://playground.wordpress.net/?blueprint-url=" "verified playground-url"

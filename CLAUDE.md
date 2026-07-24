@@ -30,22 +30,34 @@ JS/TS or Docker.
 
 ## Architecture
 
-- `action.yml` — the composite action definition. Steps: (1) refuse to run
-  against a private repo, since nightly.link can't proxy it; (2) validate
-  `post-comment` inputs early; (3) run `scripts/build_blueprint.py` to produce
-  the `playground-url`/`zip-url`/`plugin-path` outputs; (4) if `post-comment`
+- `action.yml` — the composite action definition. Steps, in order: (1) refuse
+  to run against a private repo, since nightly.link can't proxy it (only
+  checked for the default `repository` input — see the "known limitations"
+  note in the README); (2) validate `post-comment` inputs early (`pr-number`
+  must be a positive integer, `github-token` must be set); (3) if
+  `github-token` is set, verify via the Actions API (`gh api .../artifacts`)
+  that a non-expired artifact named `artifact-name` actually exists in the
+  target run, failing loudly if not — otherwise print a `::notice::` that
+  verification was skipped; (4) run `scripts/build_blueprint.py` to produce
+  the `playground-url`/`zip-url`/`plugin-path` outputs; (5) if `post-comment`
   is true, an `actions/github-script` step posts/updates a sticky PR comment
   (idempotent via an HTML marker, matching the pattern from
   `accessibility-checker-pro`'s `playground-link.yml`).
 - `scripts/build_blueprint.py` — all the actual logic, kept out of `action.yml`'s
   inline `run:` block so it's testable. Key pieces:
   - `build_zip_url()` — constructs the `nightly.link` URL from `repository` +
-    `run-id` + `artifact-name`.
+    `run-id` + `artifact-name` (URL-encoding `artifact-name`, since artifact
+    names may contain spaces/special characters).
   - `infer_slug()` — derives the plugin slug from the artifact name by
     stripping a trailing version/build/hash suffix (regex), since Playground
     needs the `{slug}/{slug}.php` path to activate the plugin and there's no
     reliable way to get that without downloading and unzipping the artifact.
     This is a best-effort heuristic; `plugin-slug` input overrides it.
+    Deliberately conservative: it will NOT strip a bare trailing `-<digits>`
+    unless there's also a dotted version or a long hex hash present, because
+    several real, popular plugin slugs end in a plain number themselves (e.g.
+    Contact Form 7's slug is literally `contact-form-7`) — an earlier version
+    of this regex stripped that "-7" and produced a broken activation path.
   - `build_blueprint()` — assembles the Playground blueprint JSON. Verified
     against the live blueprint schema at
     `https://playground.wordpress.net/blueprint-schema.json`:

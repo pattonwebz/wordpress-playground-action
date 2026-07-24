@@ -23,6 +23,19 @@ class TestInferSlug(unittest.TestCase):
     def test_strips_simple_version_suffix(self):
         self.assertEqual(bb.infer_slug("my-plugin-1.4"), "my-plugin")
 
+    def test_does_not_strip_slug_ending_in_short_plain_number(self):
+        # Regression: Contact Form 7's actual slug is "contact-form-7". The
+        # old regex treated the trailing "-7" as a stripped build number and
+        # produced the wrong activation path ("contact-form/contact-form.php").
+        self.assertEqual(bb.infer_slug("contact-form-7"), "contact-form-7")
+        self.assertEqual(bb.infer_slug("events-manager-6"), "events-manager-6")
+
+    def test_strips_bare_hash_suffix_with_no_version(self):
+        self.assertEqual(bb.infer_slug("my-plugin-7a385380"), "my-plugin")
+
+    def test_strips_build_number_and_hash_with_no_dotted_version(self):
+        self.assertEqual(bb.infer_slug("my-plugin-826-7a385380"), "my-plugin")
+
 
 class TestBuildZipUrl(unittest.TestCase):
     def test_shape(self):

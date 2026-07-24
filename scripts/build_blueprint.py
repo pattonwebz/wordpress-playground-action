@@ -11,7 +11,18 @@ import re
 import sys
 import urllib.parse
 
-SUFFIX_RE = re.compile(r"-\d+(\.\d+)*(-\d+)?(-[0-9a-f]{6,40})?$")
+# Deliberately does NOT match a bare trailing "-<digits>" with no dotted
+# version and no hex hash (e.g. "-7", "-6") - several real, popular plugin
+# slugs end that way (Contact Form 7 -> "contact-form-7", Events Manager's
+# "-6" branch naming, etc.), and treating that as a stripped build number
+# would silently produce the wrong activation path. Only strip when there's
+# a recognizable dotted version (e.g. "-2.2.0") and/or a long-enough hex hash
+# to be confident it's build metadata, not part of the slug itself.
+SUFFIX_RE = re.compile(
+    r"(?:-\d+(?:\.\d+)+(?:-\d+)?(?:-[0-9a-f]{6,40})?"  # -2.2.0[-826][-7a385380]
+    r"|-\d+-[0-9a-f]{6,40}"                             # -826-7a385380
+    r"|-[0-9a-f]{6,40})$"                               # -7a385380
+)
 
 
 def infer_slug(artifact_name: str) -> str:
@@ -19,7 +30,9 @@ def infer_slug(artifact_name: str) -> str:
 
     Strips a trailing version/build-number/commit-hash suffix, e.g.
     "accessibility-checker-pro-2.2.0-826-7a385380" -> "accessibility-checker-pro".
-    A bare name with no such suffix passes through unchanged.
+    A bare name with no such suffix, or one ending in a short plain number
+    that's plausibly part of the slug itself (e.g. "contact-form-7"),
+    passes through unchanged.
     """
     return SUFFIX_RE.sub("", artifact_name)
 

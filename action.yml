@@ -174,7 +174,6 @@ runs:
         COMMENT_MARKER: ${{ inputs.comment-marker }}
         EXPIRY_NOTE: ${{ inputs.expiry-note }}
         PR_NUMBER: ${{ inputs.pr-number }}
-        GH_TOKEN_INPUT: ${{ inputs.github-token }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
