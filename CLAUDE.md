@@ -72,11 +72,21 @@ JS/TS or Docker.
   `github-token` is set, verify via the Actions API (`gh api .../artifacts`)
   that a non-expired artifact named `artifact-name` actually exists in the
   target run, failing loudly if not — otherwise print a `::notice::` that
-  verification was skipped; (4) run `scripts/build_blueprint.py` to produce
-  the `playground-url`/`zip-url`/`plugin-path` outputs; (5) if `post-comment`
-  is true, an `actions/github-script` step posts/updates a sticky PR comment
-  (idempotent via an HTML marker, matching the pattern from
-  `accessibility-checker-pro`'s `playground-link.yml`).
+  verification was skipped. That step also keeps the matched artifact's ID
+  and exposes it as the `artifact-id`/`artifact-download-url` outputs, since
+  a download link can't be built without it and the lookup already has it.
+  Two details there are load-bearing: the name is matched inside jq via
+  `env.ARTIFACT_NAME` (an `--arg` flag would not work — `gh api`'s `--jq`
+  doesn't proxy jq's own CLI flags), and the result is trimmed with `${IDS%%...}`
+  rather than piped to `head -1`, which under `set -o pipefail` would kill
+  `gh` with SIGPIPE and fail the step; (4) run `scripts/build_blueprint.py`
+  to produce the `playground-url`/`zip-url`/`plugin-path` outputs; (5) if
+  `post-comment` is true, an `actions/github-script` step posts/updates a
+  sticky PR comment (idempotent via an HTML marker, matching the pattern from
+  `accessibility-checker-pro`'s `playground-link.yml`). With
+  `comment-build-details: true` that comment also carries artifact-download
+  and workflow-run links, so it can stand in for a caller's own build comment;
+  the artifact line is omitted (not broken) when no `github-token` was given.
 - `scripts/build_blueprint.py` — all the actual logic, kept out of `action.yml`'s
   inline `run:` block so it's testable. Key pieces:
   - `build_zip_url()` — constructs the `nightly.link` URL from `repository` +
@@ -128,8 +138,13 @@ JS/TS or Docker.
 - `.github/workflows/release.yml` — on a `vX.Y.Z` tag push, force-moves the
   floating `vX` major tag to match, so callers can pin `@v0`. Has a
   `concurrency` group so two close-together tag pushes can't race each other.
-- `.github/workflows/lint.yml` — runs `actionlint` against `action.yml` and
-  the workflow files. Pinned to a commit SHA (not a floating tag), since it's
+- `.github/workflows/lint.yml` — runs `actionlint` against the workflow files
+  in `.github/workflows/` only. It does **not** lint `action.yml`: actionlint
+  parses its input as a *workflow*, so pointing it at an action definition
+  produces spurious "on section is missing"/"unexpected key" errors. Nothing
+  statically checks `action.yml` — the composite action's bash is covered only
+  by `test.yml`'s live run and manual verification. Pinned to a commit SHA
+  (not a floating tag), since it's
   a third-party action; the SHA was verified against the real tag before
   pinning (see commit history if it ever needs bumping — re-verify the new
   SHA the same way, don't just trust a new tag name).

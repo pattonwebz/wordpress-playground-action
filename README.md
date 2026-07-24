@@ -279,6 +279,7 @@ from mode 2 applies here too, for the same reason.
 | `pr-number` | no | `''` | PR to comment on. Required if `post-comment` is `true`. |
 | `github-token` | no | `''` | Verifies the artifact exists (skipped if empty) and/or posts the PR comment. Required if `post-comment` is `true`. |
 | `comment-marker` | no | `<!-- PLAYGROUND-LINK -->` | Marker used to find/update the sticky comment. |
+| `comment-build-details` | no | `false` | Also link the artifact download and the workflow run in the comment. The artifact link needs `github-token` and is omitted without it. |
 | `expiry-note` | no | `''` | Freeform text appended to the PR comment. |
 
 ## Outputs
@@ -289,6 +290,8 @@ from mode 2 applies here too, for the same reason.
 | `zip-url` | The derived `nightly.link` URL for the artifact. |
 | `plugin-path` | The `{slug}/{slug}.php` path used for activation. |
 | `comment-url` | URL of the created/updated PR comment, if `post-comment` was `true`. |
+| `artifact-id` | Numeric ID of the verified artifact. Empty without `github-token`. |
+| `artifact-download-url` | Browser URL for downloading the verified artifact. Empty without `github-token`. |
 
 ## Plugin slug inference
 

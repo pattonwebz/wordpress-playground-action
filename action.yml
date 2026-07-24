@@ -73,6 +73,10 @@ inputs:
     description: 'HTML comment marker used to find/update the sticky comment idempotently.'
     required: false
     default: '<!-- PLAYGROUND-LINK -->'
+  comment-build-details:
+    description: 'If true, the PR comment also links the artifact download and the workflow run. The artifact link needs github-token (it reuses the ID looked up during verification) and is omitted if that lookup did not run.'
+    required: false
+    default: 'false'
   expiry-note:
     description: 'Optional freeform text appended to the PR comment (nightly.link artifact URLs expire when artifact retention does).'
     required: false
@@ -91,6 +95,12 @@ outputs:
   comment-url:
     description: 'URL of the created/updated PR comment, if post-comment was true.'
     value: ${{ steps.comment.outputs.comment-url }}
+  artifact-id:
+    description: 'Numeric ID of the verified artifact. Empty if github-token was not provided, since the lookup is what produces it.'
+    value: ${{ steps.verify.outputs.artifact-id }}
+  artifact-download-url:
+    description: 'Browser URL for downloading the verified artifact. Empty if github-token was not provided.'
+    value: ${{ steps.verify.outputs.artifact-download-url }}
 
 runs:
   using: 'composite'
@@ -130,6 +140,7 @@ runs:
         fi
 
     - name: Verify the artifact exists
+      id: verify
       if: inputs.github-token != ''
       shell: bash
       env:
@@ -139,10 +150,20 @@ runs:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
       run: |
         set -euo pipefail
-        if gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" --paginate \
-             --jq '.artifacts[] | select(.expired == false) | .name' \
-             | grep -Fxq -- "$ARTIFACT_NAME"; then
-          echo "Found artifact '${ARTIFACT_NAME}' in run ${RUN_ID}."
+        # The name is matched inside jq via `env.ARTIFACT_NAME`, not a --arg flag:
+        # `gh api`'s --jq does not proxy jq's own CLI flags.
+        #
+        # The result is captured whole and trimmed with a shell expansion rather
+        # than piped to `head -1` - under `set -o pipefail`, head closing the pipe
+        # early makes gh die on SIGPIPE and fails the step.
+        IDS=$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" --paginate \
+                --jq '.artifacts[] | select(.expired == false) | select(.name == env.ARTIFACT_NAME) | .id')
+        ARTIFACT_ID=${IDS%%$'\n'*}
+
+        if [ -n "$ARTIFACT_ID" ]; then
+          echo "Found artifact '${ARTIFACT_NAME}' (id ${ARTIFACT_ID}) in run ${RUN_ID}."
+          echo "artifact-id=${ARTIFACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "artifact-download-url=https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts/${ARTIFACT_ID}" >> "$GITHUB_OUTPUT"
         else
           echo "::error::No non-expired artifact named '${ARTIFACT_NAME}' found in run ${RUN_ID} of ${REPOSITORY}. Check that artifact-name matches the 'name:' used in an earlier actions/upload-artifact step, and that run-id/repository are correct."
           exit 1
@@ -182,6 +203,10 @@ runs:
         COMMENT_MARKER: ${{ inputs.comment-marker }}
         EXPIRY_NOTE: ${{ inputs.expiry-note }}
         PR_NUMBER: ${{ inputs.pr-number }}
+        BUILD_DETAILS: ${{ inputs.comment-build-details }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ARTIFACT_DOWNLOAD_URL: ${{ steps.verify.outputs.artifact-download-url }}
+        RUN_URL: ${{ github.server_url }}/${{ inputs.repository }}/actions/runs/${{ inputs.run-id }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
@@ -192,6 +217,16 @@ runs:
             '',
             `**[▶ Open Playground with this build](${process.env.PLAYGROUND_URL})**`,
           ];
+          if (process.env.BUILD_DETAILS === 'true') {
+            const details = [];
+            // Omitted rather than broken when github-token was absent: the artifact
+            // ID only exists because the verification step looked it up.
+            if (process.env.ARTIFACT_DOWNLOAD_URL) {
+              details.push(`- **Artifact**: [Download ${process.env.ARTIFACT_NAME}.zip](${process.env.ARTIFACT_DOWNLOAD_URL})`);
+            }
+            details.push(`- **Workflow run**: [View logs](${process.env.RUN_URL})`);
+            lines.push('', ...details);
+          }
           if (process.env.EXPIRY_NOTE) {
             lines.push('', process.env.EXPIRY_NOTE);
           }
