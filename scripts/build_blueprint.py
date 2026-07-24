@@ -148,7 +148,7 @@ def main():
     activate_on_load = str_to_bool("activate-on-load", os.environ.get("ACTIVATE_ON_LOAD", "true"))
     landing_page = os.environ.get("LANDING_PAGE", "/wp-admin/plugins.php").strip()
     wp_version = os.environ.get("WP_VERSION", "latest")
-    php_version = os.environ.get("PHP_VERSION", "8.2")
+    php_version = os.environ.get("PHP_VERSION", "latest")
     multisite = str_to_bool("multisite", os.environ.get("MULTISITE", "false"))
     extra_plugins_activate = str_to_bool("extra-plugins-activate", os.environ.get("EXTRA_PLUGINS_ACTIVATE", "true"))
     extra_theme_url = os.environ.get("EXTRA_THEME_URL", "").strip()

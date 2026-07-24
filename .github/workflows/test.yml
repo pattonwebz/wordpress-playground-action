@@ -9,7 +9,7 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 -m unittest discover -s tests -v
 
   action-e2e:
@@ -19,13 +19,13 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download a known-good public test plugin zip
         run: curl -sL -o hello-dolly.zip "https://downloads.wordpress.org/plugin/hello-dolly.zip"
 
       - name: Re-upload it as an artifact, like a real caller would
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hello-dolly
           path: hello-dolly.zip

@@ -34,9 +34,9 @@ inputs:
     required: false
     default: 'latest'
   php-version:
-    description: 'Preferred PHP version for Playground (e.g. "8.2").'
+    description: 'Preferred PHP version for Playground (e.g. "8.3", "latest").'
     required: false
-    default: '8.2'
+    default: 'latest'
   multisite:
     description: 'Whether to set up the Playground site as a multisite network.'
     required: false
@@ -176,7 +176,7 @@ runs:
     - name: Post the link (sticky comment)
       if: inputs.post-comment == 'true'
       id: comment
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       env:
         PLAYGROUND_URL: ${{ steps.build.outputs.playground-url }}
         COMMENT_MARKER: ${{ inputs.comment-marker }}

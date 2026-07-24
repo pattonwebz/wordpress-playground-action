@@ -34,12 +34,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build plugin zip
         run: ./bin/build-zip.sh   # however you produce your plugin zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: my-plugin
           path: my-plugin.zip
@@ -161,12 +161,12 @@ jobs:
   build-and-link:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build plugin zip
         run: ./bin/build-zip.sh   # however you produce your plugin zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: my-plugin
           path: my-plugin.zip
@@ -239,7 +239,7 @@ jobs:
 
       - name: Remove the trigger label
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
@@ -269,7 +269,7 @@ from mode 2 applies here too, for the same reason.
 | `activate-on-load` | no | `true` | Auto-activate the plugin after install. |
 | `landing-page` | no | `/wp-admin/plugins.php` | Admin path Playground lands on. |
 | `wp-version` | no | `latest` | Preferred WordPress core version. |
-| `php-version` | no | `8.2` | Preferred PHP version. |
+| `php-version` | no | `latest` | Preferred PHP version. |
 | `multisite` | no | `false` | Set up the site as a multisite network. |
 | `extra-plugins` | no | `[]` | JSON array of additional plugin zip URLs to install. |
 | `extra-plugins-activate` | no | `true` | Activate each of `extra-plugins` after install. |
