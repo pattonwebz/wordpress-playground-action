@@ -190,7 +190,7 @@ track record of "obviously correct" code that wasn't.
 
 ## Cutting a release
 
-1. Tag `vX.Y.Z` on `master` and push the tag — `release.yml` force-moves the
+1. Tag `vX.Y.Z` on `main` and push the tag — `release.yml` force-moves the
    floating `vX` tag to match automatically.
 2. **First release only**: creating a GitHub Release from that tag has a
    one-time "Publish this Action to the GitHub Marketplace" checkbox in the
