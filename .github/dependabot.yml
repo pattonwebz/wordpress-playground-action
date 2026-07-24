@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    # With "/", Dependabot scans .github/workflows/*.yml AND action.yml at
+    # the repo root - this repo's composite action lives at the root, not
+    # in a subdirectory, so this one entry covers both.
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

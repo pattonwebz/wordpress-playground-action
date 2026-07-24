@@ -133,6 +133,14 @@ JS/TS or Docker.
   a third-party action; the SHA was verified against the real tag before
   pinning (see commit history if it ever needs bumping — re-verify the new
   SHA the same way, don't just trust a new tag name).
+- `.github/dependabot.yml` — weekly `github-actions` ecosystem updates with
+  `directory: "/"`, which (per GitHub's own docs) covers both
+  `.github/workflows/*.yml` and `action.yml` at the repo root in one entry —
+  this repo's composite action lives at the root, not a subdirectory, so a
+  second entry isn't needed. This exists because a manual audit (checking
+  `actions/checkout`, `actions/upload-artifact`, `actions/github-script`,
+  and `raven-actions/actionlint` against their real current releases) found
+  several of them 2-3 majors behind with no automated alerting in place.
 
 ## Extending this action
 
