@@ -1,0 +1,30 @@
+name: Release
+
+# Keeps a floating major-version tag (e.g. v1) pointed at the latest vX.Y.Z tag,
+# so callers can pin `uses: equalizedigital/wordpress-playground-action@v1`.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  move-major-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Move the floating major tag
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          MAJOR="${TAG%%.*}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -f "$MAJOR" "$TAG"
+          git push origin "$MAJOR" --force

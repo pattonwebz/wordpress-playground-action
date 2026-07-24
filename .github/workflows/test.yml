@@ -1,0 +1,83 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests -v
+
+  action-e2e:
+    name: End-to-end (nightly.link + blueprint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download a known-good public test plugin zip
+        run: curl -sL -o hello-dolly.zip "https://downloads.wordpress.org/plugin/hello-dolly.zip"
+
+      - name: Re-upload it as an artifact, like a real caller would
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-dolly
+          path: hello-dolly.zip
+          retention-days: 1
+
+      - name: Run the action (defaults)
+        id: defaults
+        uses: ./
+        with:
+          artifact-name: hello-dolly
+
+      - name: Run the action (multisite, no auto-activate, extra plugin)
+        id: variant
+        uses: ./
+        with:
+          artifact-name: hello-dolly
+          activate-on-load: 'false'
+          multisite: 'true'
+          extra-plugins: '["https://downloads.wordpress.org/plugin/hello-dolly.zip"]'
+
+      - name: Assert on outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_contains() {
+            local haystack="$1" needle="$2" label="$3"
+            if [[ "$haystack" != *"$needle"* ]]; then
+              echo "::error::Expected $label to contain '$needle', got: $haystack"
+              exit 1
+            fi
+          }
+
+          echo "playground-url (defaults): ${{ steps.defaults.outputs.playground-url }}"
+          assert_contains "${{ steps.defaults.outputs.playground-url }}" "https://playground.wordpress.net/?blueprint-url=" "defaults playground-url"
+          assert_contains "${{ steps.defaults.outputs.zip-url }}" "https://nightly.link/${{ github.repository }}/actions/runs/${{ github.run_id }}/hello-dolly.zip" "defaults zip-url"
+          assert_contains "${{ steps.defaults.outputs.plugin-path }}" "hello-dolly/hello-dolly.php" "defaults plugin-path"
+
+          echo "playground-url (variant): ${{ steps.variant.outputs.playground-url }}"
+
+          python3 - <<'PY'
+          import base64, json, os, urllib.parse
+          url = os.environ["VARIANT_URL"]
+          query = urllib.parse.urlparse(url).query
+          data_uri = urllib.parse.parse_qs(query)["blueprint-url"][0]
+          blueprint = json.loads(base64.b64decode(data_uri.split(",", 1)[1]))
+          steps = blueprint["steps"]
+          assert steps[0]["step"] == "login"
+          assert steps[1]["step"] == "enableMultisite", steps
+          install = [s for s in steps if s["step"] == "installPlugin"]
+          assert len(install) == 2, install
+          assert install[0]["options"]["activate"] is False, install[0]
+          print("Blueprint shape OK:", json.dumps(blueprint, indent=2))
+          PY
+        env:
+          VARIANT_URL: ${{ steps.variant.outputs.playground-url }}

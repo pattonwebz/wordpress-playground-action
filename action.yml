@@ -1,0 +1,178 @@
+name: 'WordPress Playground Link'
+description: 'Build a WordPress Playground link that installs a plugin from a GitHub Actions artifact (via nightly.link), and optionally post it as a sticky PR comment.'
+author: 'Equalize Digital'
+branding:
+  icon: 'play'
+  color: 'purple'
+
+inputs:
+  artifact-name:
+    description: 'Name of the actions/upload-artifact artifact holding the plugin zip, uploaded by a prior step in this workflow run.'
+    required: true
+  run-id:
+    description: 'Run whose artifact to link to. Defaults to the current run.'
+    required: false
+    default: ${{ github.run_id }}
+  repository:
+    description: '"owner/repo" the artifact belongs to. Defaults to the current repository.'
+    required: false
+    default: ${{ github.repository }}
+  plugin-slug:
+    description: 'Override for the plugin slug used to build the {slug}/{slug}.php activation path. If omitted, inferred from artifact-name.'
+    required: false
+    default: ''
+  activate-on-load:
+    description: 'Whether to auto-activate the plugin after install.'
+    required: false
+    default: 'true'
+  landing-page:
+    description: 'Admin path Playground should land on after setup.'
+    required: false
+    default: '/wp-admin/plugins.php'
+  wp-version:
+    description: 'Preferred WordPress core version for Playground (e.g. "latest", "6.5").'
+    required: false
+    default: 'latest'
+  php-version:
+    description: 'Preferred PHP version for Playground (e.g. "8.2").'
+    required: false
+    default: '8.2'
+  multisite:
+    description: 'Whether to set up the Playground site as a multisite network.'
+    required: false
+    default: 'false'
+  extra-plugins:
+    description: 'JSON array string of additional plugin zip URLs to install before landing, e.g. ["https://.../foo.zip"].'
+    required: false
+    default: '[]'
+  extra-plugins-activate:
+    description: 'Whether to activate each of the extra-plugins after installing them.'
+    required: false
+    default: 'true'
+  extra-theme-url:
+    description: 'Optional zip URL for an additional theme to install.'
+    required: false
+    default: ''
+  extra-theme-activate:
+    description: 'Whether to activate the extra theme after installing it.'
+    required: false
+    default: 'true'
+  post-comment:
+    description: 'If true, post/update a sticky PR comment containing the Playground link. Requires pr-number and github-token.'
+    required: false
+    default: 'false'
+  pr-number:
+    description: 'PR number to comment on. Required if post-comment is true.'
+    required: false
+    default: ''
+  github-token:
+    description: 'Token used to read/write the PR comment. Required if post-comment is true (needs pull-requests: write permission).'
+    required: false
+    default: ''
+  comment-marker:
+    description: 'HTML comment marker used to find/update the sticky comment idempotently.'
+    required: false
+    default: '<!-- PLAYGROUND-LINK -->'
+  expiry-note:
+    description: 'Optional freeform text appended to the PR comment (nightly.link artifact URLs expire when artifact retention does).'
+    required: false
+    default: ''
+
+outputs:
+  playground-url:
+    description: 'The generated https://playground.wordpress.net/?blueprint-url=... link.'
+    value: ${{ steps.build.outputs.playground-url }}
+  zip-url:
+    description: 'The derived nightly.link URL for the artifact.'
+    value: ${{ steps.build.outputs.zip-url }}
+  plugin-path:
+    description: 'The inferred (or overridden) {slug}/{slug}.php path used for activation.'
+    value: ${{ steps.build.outputs.plugin-path }}
+  comment-url:
+    description: 'URL of the created/updated PR comment, if post-comment was true.'
+    value: ${{ steps.comment.outputs.comment-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Refuse to run against a private repository
+      if: inputs.repository == github.repository && github.event.repository.private == true
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::error::nightly.link only proxies public repositories/artifacts. This repository is private, so this action cannot build a working zip URL. Private-repo PR builds need your own tokenised-URL flow instead."
+        exit 1
+
+    - name: Validate PR comment inputs
+      if: inputs.post-comment == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${{ inputs.pr-number }}" ]; then
+          echo "::error::post-comment is true but pr-number was not provided."
+          exit 1
+        fi
+        if [ -z "${{ inputs.github-token }}" ]; then
+          echo "::error::post-comment is true but github-token was not provided."
+          exit 1
+        fi
+
+    - name: Build the Playground link
+      id: build
+      shell: bash
+      env:
+        REPOSITORY: ${{ inputs.repository }}
+        RUN_ID: ${{ inputs.run-id }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        PLUGIN_SLUG: ${{ inputs.plugin-slug }}
+        ACTIVATE_ON_LOAD: ${{ inputs.activate-on-load }}
+        LANDING_PAGE: ${{ inputs.landing-page }}
+        WP_VERSION: ${{ inputs.wp-version }}
+        PHP_VERSION: ${{ inputs.php-version }}
+        MULTISITE: ${{ inputs.multisite }}
+        EXTRA_PLUGINS: ${{ inputs.extra-plugins }}
+        EXTRA_PLUGINS_ACTIVATE: ${{ inputs.extra-plugins-activate }}
+        EXTRA_THEME_URL: ${{ inputs.extra-theme-url }}
+        EXTRA_THEME_ACTIVATE: ${{ inputs.extra-theme-activate }}
+      run: python3 "${{ github.action_path }}/scripts/build_blueprint.py"
+
+    - name: Post the link (sticky comment)
+      if: inputs.post-comment == 'true'
+      id: comment
+      uses: actions/github-script@v7
+      env:
+        PLAYGROUND_URL: ${{ steps.build.outputs.playground-url }}
+        COMMENT_MARKER: ${{ inputs.comment-marker }}
+        EXPIRY_NOTE: ${{ inputs.expiry-note }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        GH_TOKEN_INPUT: ${{ inputs.github-token }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const marker = process.env.COMMENT_MARKER;
+          const lines = [
+            marker,
+            '### 🛝 WordPress Playground',
+            '',
+            `**[▶ Open Playground with this build](${process.env.PLAYGROUND_URL})**`,
+          ];
+          if (process.env.EXPIRY_NOTE) {
+            lines.push('', process.env.EXPIRY_NOTE);
+          }
+          const body = lines.join('\n');
+
+          const { owner, repo } = context.repo;
+          const issue_number = Number(process.env.PR_NUMBER);
+
+          const comments = await github.paginate(github.rest.issues.listComments, {
+            owner, repo, issue_number,
+          });
+          const existing = comments.find(c => c.body && c.body.includes(marker));
+
+          let result;
+          if (existing) {
+            result = await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            result = await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+          core.setOutput('comment-url', result.data.html_url);
