@@ -280,7 +280,44 @@ from mode 2 applies here too, for the same reason.
 | `github-token` | no | `''` | Verifies the artifact exists (skipped if empty) and/or posts the PR comment. Required if `post-comment` is `true`. |
 | `comment-marker` | no | `<!-- PLAYGROUND-LINK -->` | Marker used to find/update the sticky comment. |
 | `comment-build-details` | no | `false` | Also link the artifact download and the workflow run in the comment. The artifact link needs `github-token` and is omitted without it. |
+| `comment-template` | no | `''` | Full markdown body replacing the default layout (overrides `comment-build-details`). See [Comment template](#comment-template). |
 | `expiry-note` | no | `''` | Freeform text appended to the PR comment. |
+
+## Comment template
+
+`comment-template` replaces the comment body entirely. Omit it and the default
+layout is used (optionally with `comment-build-details`).
+
+| Placeholder | Value |
+| --- | --- |
+| `{playground_url}` | The Playground link. |
+| `{zip_url}` | The `nightly.link` zip URL. |
+| `{plugin_path}` | The `{slug}/{slug}.php` activation path. |
+| `{artifact_name}` | The `artifact-name` input, verbatim. |
+| `{artifact_url}` | Artifact download page. Empty without `github-token`. |
+| `{run_url}` | The workflow run. |
+| `{pr_number}` | The PR being commented on. |
+
+```yaml
+      - uses: pattonwebz/wordpress-playground-action@v0
+        with:
+          artifact-name: ${{ env.ZIP_NAME }}
+          post-comment: 'true'
+          pr-number: ${{ github.event.pull_request.number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-template: |
+            ✅ Build complete
+
+            - **Artifact**: [Download {artifact_name}.zip]({artifact_url})
+            - **Workflow run**: [View logs]({run_url})
+            - **Playground**: [Open with plugin preinstalled]({playground_url})
+```
+
+`comment-marker` is prepended automatically unless the template already
+contains it — the marker is what makes the comment update in place instead of
+posting a new one each build. Unknown `{placeholders}` are left verbatim and
+emit a warning, so a typo shows up in the comment rather than becoming
+`undefined`.
 
 ## Outputs
 

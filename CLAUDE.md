@@ -87,6 +87,14 @@ JS/TS or Docker.
   `comment-build-details: true` that comment also carries artifact-download
   and workflow-run links, so it can stand in for a caller's own build comment;
   the artifact line is omitted (not broken) when no `github-token` was given.
+  `comment-template` replaces the body outright (placeholder substitution over
+  `{playground_url}` etc.) and takes precedence over `comment-build-details`.
+  Two rules there exist to prevent silent breakage: the marker is force-prepended
+  when a template omits it (without it the comment stops being sticky and every
+  build posts a new one), and an unrecognized `{placeholder}` is left verbatim
+  plus warned about rather than substituted as `undefined` — a typo should be
+  visible in the posted comment, not a dead link. The regex is `[a-z_]+`, which
+  deliberately does not match literal braces like `{"a":1}` in prose or code.
 - `scripts/build_blueprint.py` — all the actual logic, kept out of `action.yml`'s
   inline `run:` block so it's testable. Key pieces:
   - `build_zip_url()` — constructs the `nightly.link` URL from `repository` +

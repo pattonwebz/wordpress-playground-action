@@ -74,9 +74,13 @@ inputs:
     required: false
     default: '<!-- PLAYGROUND-LINK -->'
   comment-build-details:
-    description: 'If true, the PR comment also links the artifact download and the workflow run. The artifact link needs github-token (it reuses the ID looked up during verification) and is omitted if that lookup did not run.'
+    description: 'If true, the PR comment also links the artifact download and the workflow run. The artifact link needs github-token (it reuses the ID looked up during verification) and is omitted if that lookup did not run. Ignored when comment-template is set.'
     required: false
     default: 'false'
+  comment-template:
+    description: 'Optional markdown body that replaces the default comment layout entirely (and so overrides comment-build-details). Placeholders: {playground_url}, {zip_url}, {plugin_path}, {artifact_name}, {artifact_url}, {run_url}, {pr_number}. comment-marker is prepended automatically unless the template already contains it. Unknown {placeholders} are left verbatim and warned about.'
+    required: false
+    default: ''
   expiry-note:
     description: 'Optional freeform text appended to the PR comment (nightly.link artifact URLs expire when artifact retention does).'
     required: false
@@ -204,33 +208,61 @@ runs:
         EXPIRY_NOTE: ${{ inputs.expiry-note }}
         PR_NUMBER: ${{ inputs.pr-number }}
         BUILD_DETAILS: ${{ inputs.comment-build-details }}
+        COMMENT_TEMPLATE: ${{ inputs.comment-template }}
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         ARTIFACT_DOWNLOAD_URL: ${{ steps.verify.outputs.artifact-download-url }}
         RUN_URL: ${{ github.server_url }}/${{ inputs.repository }}/actions/runs/${{ inputs.run-id }}
+        ZIP_URL: ${{ steps.build.outputs.zip-url }}
+        PLUGIN_PATH: ${{ steps.build.outputs.plugin-path }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
           const marker = process.env.COMMENT_MARKER;
-          const lines = [
-            marker,
-            '### 🛝 WordPress Playground',
-            '',
-            `**[▶ Open Playground with this build](${process.env.PLAYGROUND_URL})**`,
-          ];
-          if (process.env.BUILD_DETAILS === 'true') {
-            const details = [];
-            // Omitted rather than broken when github-token was absent: the artifact
-            // ID only exists because the verification step looked it up.
-            if (process.env.ARTIFACT_DOWNLOAD_URL) {
-              details.push(`- **Artifact**: [Download ${process.env.ARTIFACT_NAME}.zip](${process.env.ARTIFACT_DOWNLOAD_URL})`);
+          const template = process.env.COMMENT_TEMPLATE;
+
+          let body;
+          if (template) {
+            const values = {
+              playground_url: process.env.PLAYGROUND_URL,
+              zip_url: process.env.ZIP_URL,
+              plugin_path: process.env.PLUGIN_PATH,
+              artifact_name: process.env.ARTIFACT_NAME,
+              artifact_url: process.env.ARTIFACT_DOWNLOAD_URL || '',
+              run_url: process.env.RUN_URL,
+              pr_number: process.env.PR_NUMBER,
+            };
+            // Unknown placeholders are left verbatim rather than replaced with
+            // "undefined" - a typo should be visible in the comment, not silently
+            // turn into a broken link.
+            body = template.replace(/\{([a-z_]+)\}/g, (match, key) => {
+              if (Object.prototype.hasOwnProperty.call(values, key)) return values[key];
+              core.warning(`comment-template: unknown placeholder ${match}, left as-is. Known: ${Object.keys(values).join(', ')}.`);
+              return match;
+            });
+            // The marker is what makes the comment sticky, so it cannot be optional.
+            if (!body.includes(marker)) body = `${marker}\n${body}`;
+          } else {
+            const lines = [
+              marker,
+              '### 🛝 WordPress Playground',
+              '',
+              `**[▶ Open Playground with this build](${process.env.PLAYGROUND_URL})**`,
+            ];
+            if (process.env.BUILD_DETAILS === 'true') {
+              const details = [];
+              // Omitted rather than broken when github-token was absent: the artifact
+              // ID only exists because the verification step looked it up.
+              if (process.env.ARTIFACT_DOWNLOAD_URL) {
+                details.push(`- **Artifact**: [Download ${process.env.ARTIFACT_NAME}.zip](${process.env.ARTIFACT_DOWNLOAD_URL})`);
+              }
+              details.push(`- **Workflow run**: [View logs](${process.env.RUN_URL})`);
+              lines.push('', ...details);
             }
-            details.push(`- **Workflow run**: [View logs](${process.env.RUN_URL})`);
-            lines.push('', ...details);
+            if (process.env.EXPIRY_NOTE) {
+              lines.push('', process.env.EXPIRY_NOTE);
+            }
+            body = lines.join('\n');
           }
-          if (process.env.EXPIRY_NOTE) {
-            lines.push('', process.env.EXPIRY_NOTE);
-          }
-          const body = lines.join('\n');
 
           const { owner, repo } = context.repo;
           const issue_number = Number(process.env.PR_NUMBER);
