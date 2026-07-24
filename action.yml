@@ -1,5 +1,5 @@
 name: 'WordPress Playground Link'
-description: 'Build a WordPress Playground link that installs a plugin from a GitHub Actions artifact (via nightly.link), and optionally post it as a sticky PR comment.'
+description: 'Build a WordPress Playground link from a GitHub Actions artifact and optionally post it as a PR comment.'
 author: 'William Patton'
 branding:
   icon: 'play'
